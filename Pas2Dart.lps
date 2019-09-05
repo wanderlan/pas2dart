@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <ProjectSession>
+    <PathDelim Value="\"/>
+    <Version Value="11"/>
+    <BuildModes Active="Debug"/>
+    <Units Count="12">
+      <Unit0>
+        <Filename Value="Pas2Dart.pas"/>
+        <IsPartOfProject Value="True"/>
+        <IsVisibleTab Value="True"/>
+        <TopLine Value="875"/>
+        <CursorPos Y="925"/>
+        <UsageCount Value="202"/>
+        <Loaded Value="True"/>
+      </Unit0>
+      <Unit1>
+        <Filename Value="pparser.pp"/>
+        <UnitName Value="PParser"/>
+        <EditorIndex Value="1"/>
+        <TopLine Value="568"/>
+        <CursorPos Y="576"/>
+        <UsageCount Value="158"/>
+        <Loaded Value="True"/>
+      </Unit1>
+      <Unit2>
+        <Filename Value="pastree.pp"/>
+        <UnitName Value="PasTree"/>
+        <EditorIndex Value="3"/>
+        <TopLine Value="165"/>
+        <CursorPos X="3" Y="183"/>
+        <UsageCount Value="101"/>
+        <Loaded Value="True"/>
+      </Unit2>
+      <Unit3>
+        <Filename Value="Pas2Groovy.groovy"/>
+        <EditorIndex Value="-1"/>
+        <TopLine Value="7"/>
+        <CursorPos X="20" Y="65"/>
+        <UsageCount Value="101"/>
+        <DefaultSyntaxHighlighter Value="None"/>
+      </Unit3>
+      <Unit4>
+        <Filename Value="test_parser.pp"/>
+        <UnitName Value="test_parser1"/>
+        <EditorIndex Value="-1"/>
+        <TopLine Value="274"/>
+        <CursorPos X="24" Y="145"/>
+        <UsageCount Value="57"/>
+      </Unit4>
+      <Unit5>
+        <Filename Value="pscanner.pp"/>
+        <UnitName Value="PScanner"/>
+        <EditorIndex Value="2"/>
+        <TopLine Value="3701"/>
+        <CursorPos X="3" Y="3717"/>
+        <UsageCount Value="126"/>
+        <Loaded Value="True"/>
+      </Unit5>
+      <Unit6>
+        <Filename Value="Tela.groovy"/>
+        <EditorIndex Value="-1"/>
+        <TopLine Value="496"/>
+        <CursorPos Y="1300"/>
+        <UsageCount Value="107"/>
+        <DefaultSyntaxHighlighter Value="None"/>
+      </Unit6>
+      <Unit7>
+        <Filename Value="..\Tela.pas"/>
+        <EditorIndex Value="-1"/>
+        <TopLine Value="145"/>
+        <CursorPos X="28" Y="1211"/>
+        <UsageCount Value="107"/>
+      </Unit7>
+      <Unit8>
+        <Filename Value="..\TRMConsts.pas"/>
+        <EditorIndex Value="-1"/>
+        <TopLine Value="82"/>
+        <UsageCount Value="103"/>
+      </Unit8>
+      <Unit9>
+        <Filename Value="..\IBMUtils.pas"/>
+        <EditorIndex Value="-1"/>
+        <CursorPos X="18" Y="78"/>
+        <UsageCount Value="102"/>
+      </Unit9>
+      <Unit10>
+        <Filename Value="..\Loops.pas"/>
+        <EditorIndex Value="-1"/>
+        <TopLine Value="106"/>
+        <CursorPos X="3" Y="137"/>
+        <UsageCount Value="21"/>
+      </Unit10>
+      <Unit11>
+        <Filename Value="..\TB27.pas"/>
+        <EditorIndex Value="-1"/>
+        <TopLine Value="450"/>
+        <CursorPos X="3" Y="528"/>
+        <UsageCount Value="82"/>
+      </Unit11>
+    </Units>
+    <JumpHistory HistoryIndex="-1"/>
+    <RunParams>
+      <FormatVersion Value="2"/>
+      <Modes Count="0" ActiveMode="default"/>
+    </RunParams>
+  </ProjectSession>
+</CONFIG>
