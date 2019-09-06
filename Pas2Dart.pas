@@ -93,10 +93,12 @@ function ConvertMember(PasMember: String): String;
 var
   I: Integer;
 const
-  PascalMembers: array[0..5] of String = ('write', 'writeln', 'exit',  'inc', 'dec', 'halt');
-  DartMembers: array[0..5] of String = ('print', 'print', 'return', '++',  '--',  'exit(0)');
+  PascalMembers: array[0..6] of String = ('write', 'writeln', 'exit',  'inc', 'dec', 'halt', 'count');
+  DartMembers: array[0..6] of String = ('print', 'print', 'return', '++',  '--',  'exit', 'length');
 begin
   Result := PasMember;
+  if Pos('''', Result) <> 0 then
+    exit;
   I := Pos('.', Result);
   if I <> 0 then
     Result := Copy(Result, I + 1, MAXINT);
@@ -127,7 +129,7 @@ begin
   Write(G, Left);
   for I := 0 to High(Lista) do
     if (Lista[I] is TBinaryExpr) and (Lista[I].Kind in [pekRange, pekSet]) then
-      Write(G, '...', WriteExpr(Lista[I]), IfThen(I <> High(Lista), ', '))   ^^^^^^
+      Write(G, '...', WriteExpr(Lista[I]), IfThen(I <> High(Lista), ', '))   //^^^^^^
     else
       Write(G, WriteExpr(Lista[I]), IfThen(I <> High(Lista), ', '));
   Write(G, Right);
@@ -210,14 +212,14 @@ begin
       case Kind of
         pekNumber: Value := ReplaceText(Value, '$', '0x');
         pekString:
-          case Value[1] of
+           case Value[1] of
             '#': Value := ConvertCharLiteral(Value);
             '''':
               if Value <> '''''' then
                 Value := '''' + ReplaceText(Copy(Value, 2, Length(Value) - 2), '''', '\''') + '''';
           end;
       end;
-      Write(G, ConvertType(ConvertMember(Value), False, False), IsFuncsWithoutParams(Value))
+      Write(G, ConvertType(ConvertMember(Value), False), IsFuncsWithoutParams(Value))
     end
   else
   if Expr is TBoolConstExpr then
@@ -250,7 +252,7 @@ begin
             else
               WriteList(WriteExpr(Value) + '(', Params, ')');
         else
-          WriteList(WriteExpr(Value) + '{', Params, '}')
+          WriteList(WriteExpr(Value) + '[', Params, ']')
         end
   else
   if Expr is TArrayValues then  //const AnArrayConst: Array[1..3] of Integer = (1,2,3);
@@ -358,7 +360,7 @@ begin
     begin
       if not WriteByRefFunction(Expr, '', Indent) then
         Writeln(G, Indent, WriteExpr(Expr),
-          IfThen((Expr is TPrimitiveExpr) and (Pos('"' + UpperCase(TPrimitiveExpr(Expr).Value) + '"', '"EXIT"BREAK"CONTINUE"') = 0) , '()'))
+          IfThen((Expr is TPrimitiveExpr) and (Pos('"' + UpperCase(TPrimitiveExpr(Expr).Value) + '"', '"EXIT"BREAK"CONTINUE"') = 0) , '()'), ';')
     end
   else
   if Smt is TPasImplAssign then
@@ -366,7 +368,7 @@ begin
     begin
       if ((Left is TPrimitiveExpr) and not WriteByRefFunction(Right, ConvertMember(TPrimitiveExpr(Left).Value), Indent)) or
         not(Left is TPrimitiveExpr) then
-        Writeln(G, Indent, WriteExpr(Left), ' = ', WriteExpr(Right));
+        Writeln(G, Indent, WriteExpr(Left), ' = ', WriteExpr(Right), ';');
     end
   else
   if Smt is TPasImplCaseStatement then
@@ -376,7 +378,7 @@ begin
       for I := 0 to Expressions.Count - 1 do
         Write(G, 'case ', WriteExpr(TPasExpr(Expressions[I])), ': ');
       WriteImplElement(Body, Indent + TAB, LF, SemChaves);
-      Writeln(G, Indent + TAB, 'break');
+      Writeln(G, Indent + TAB, 'break;');
     end
   else
   if Smt is TPasImplWithDo then
@@ -384,7 +386,7 @@ begin
     begin
       Write(G, Indent);
       for I := 0 to Expressions.Count - 1 do
-        Write(G, WriteExpr(TPasExpr(Expressions[I])), '.with', IfThen(I < Expressions.Count - 1, ' { '));   ****
+        Write(G, WriteExpr(TPasExpr(Expressions[I])), '.with', IfThen(I < Expressions.Count - 1, ' { '));   //****
       WriteImplElement(Body, Indent, '', ComChavesSemSalto);
       Writeln(G, IfThen(Expressions.Count > 1, StringOfChar('}', Expressions.Count - 1)));
     end
@@ -583,6 +585,7 @@ begin
           end
           else
             Write(G, 'var ', ConvertMember(Name), ' =', GetArrayTypePos(TPasArrayType(VarType)));
+          Write(G, ';');
           Exit;
         end
         else
@@ -602,6 +605,7 @@ begin
         Write(G, 'const ', ConvertMember(Name));  // const
       if Assigned(Expr) then // const AnArrayConst : Array[1..3] of Integer = (1,2,3);
         Write(G, ' = ', WriteExpr(Expr));
+      Write(G, ';');
   end;
 end;
   
@@ -618,7 +622,7 @@ begin
     with TPasEnumType(Elemento) do
       for I := 0 to Values.Count - 1 do
         Write(G, ConvertMember(TPasEnumValue(Values[I]).Name), IfThen(I < (Values.Count - 1), ', '));
-    Writeln(G, '}');
+    Writeln(G, '}', LF);
   end
   else
   if Elemento is TPasFileType then
@@ -690,10 +694,9 @@ begin
       begin
         if (Value <> '') and not Optional then
         begin
-          Optional = true;
+          Optional := true;
           Write(G, '[');
         end;
-        Write(G, IfThen(Access in [argConst, argConstRef], 'const '));
         if ArgType is TPasArrayType then
           WriteArrayTypePre(TPasArrayType(ArgType))
         else
@@ -734,12 +737,12 @@ begin
   begin
     Writeln(G, IfThen(IsClosure, '', ' {'));
     if InFunction then
-      Writeln(G, Indent + TAB, FuncType, ' result');
+      Writeln(G, Indent + TAB, FuncType, ' result;');
     if not WriteDecls(Proc.Body, Indent + TAB, True) and InFunction then
       Writeln(G);
     Returns := '';
     if InFunction or (ByRefArgs.Count > 0) then
-      Returns := 'return ' + IfThen(ByRefArgs.Count > 0, '[' + ListToStr(ByRefArgs) + ']', 'result');
+      Returns := 'return ' + IfThen(ByRefArgs.Count > 0, '[' + ListToStr(ByRefArgs) + ']', 'result') + ';';
     WriteBlock(TPasImplBlock(Proc.Body.Body), Indent, Returns, SoFinal);
   end;
 end;
@@ -764,14 +767,15 @@ begin
   InFunction := False;
 end;
 
-procedure WriteProcedure(Proc: TPasProcedure; Indent: String; Visibility: String = '');
+function WriteProcedure(Proc: TPasProcedure; Indent: String; Visibility: String = ''): Boolean;
 var
   FuncType: String;
 begin
   if Assigned(Proc) and not Proc.IsForward then
   begin
+    Result := true;
     if Proc.IsOverride then
-      Write(G, Indent, '@Override', LF);
+      Write(G, Indent, '@override', LF);
     Write(G, Indent, Visibility, IfThen((Proc is TPasClassProcedure) or (Proc is TPasClassFunction), 'static '));
     InFunction := Proc.ProcType is TPasFunctionType;
     ByRefArgs := GetByRefArgs(Proc.ProcType.Args, InFunction);
@@ -783,7 +787,9 @@ begin
       IfThen(ByRefArgs.Count > 0, '', FuncType) + ' ' + ConvertMember(Proc.Name)));
     WriteProcParams(Proc.ProcType.Args);
     WriteProcBody(Proc, Indent, FuncType, False);
-  end;
+  end
+  else
+    Result := false;
   InFunction := False;
 end;
 
@@ -827,7 +833,7 @@ var
   GetVisibility: array[TPasMemberVisibility] of String = ('', '_', '', '', '', '', '_', '');
   I: Integer;
   Elemento: TPasElement;
-  Prefix, Visib: String;
+  Prefix: String;
 begin
   if Assigned(Class_) and not Class_.IsForward then
     with Class_ do
@@ -853,16 +859,16 @@ begin
       Elemento := TPasElement(Members[I]);
       if Elemento.Name = '' then Continue;
       Write(G, Elemento.DocComment);
-      Visib := GetVisibility[Elemento.Visibility];
-      Prefix := Indent + TAB + Visib;
+      Elemento.Name := GetVisibility[Elemento.Visibility] + Elemento.Name;
+      Prefix := Indent + TAB;
       if Elemento is TPasVariable then
         WriteVar(TPasVariable(Elemento), Prefix)
       else
       if Elemento is TPasProcedure then
-        WriteProcedure(TPasProcedure(Elemento), Indent + TAB, Visib)
+        WriteProcedure(TPasProcedure(Elemento), Indent + TAB)
       else
       if Elemento is TPasProperty then
-        with TPasProperty(Elemento) do       *********
+        with TPasProperty(Elemento) do       //*********
           Writeln(G, Prefix, IfThen(WriteAccessorName = '', 'final '), ConvertType(TPasType(VarType).Name), Name)
       else
         Writeln(G, 'Unknown declaration in class/interface: ', Elemento.Name);
@@ -883,9 +889,19 @@ begin
     Elemento := TPasElement(Decl);
     if Elemento is TPasSection then // TInterfaceSection, TImplementationSection or TProgramSection
       with TPasSection(Elemento) do
+      begin
         for I := 0 to UsesList.Count - 1 do
-          if Pos('"' + UpCase(TPasElement(UsesList[I]).Name) + '"', '"SYSTEM"SYSUTILS""STRUTILS"CLASSES"MATH"LCLTYPE"CONTNRS"') = 0 then
-            Writeln(G, 'import ', TPasElement(UsesList[I]).Name, IfThen(I = UsesList.Count - 1, LF));
+          case UpCase(TPasElement(UsesList[I]).Name) of
+            'SYSTEM', 'STRUTILS', 'CLASSES', 'LCLTYPE' : ;
+            'SYSUTILS': Writeln(G, 'import ''dart:io'';');
+            'CONTNRS' : Writeln(G, 'import ''dart:collection'';');
+            'MATH'    : Writeln(G, 'import ''dart:math'';');
+          else
+            Writeln(G, 'import ''', TPasElement(UsesList[I]).Name, ''';');
+          end;
+        if UsesList.Count <> 0 then
+           Writeln(G);
+      end;
     if Assigned(Decl.Declarations) then
     begin
       for I := 0 to Decl.Declarations.Count - 1 do
@@ -909,13 +925,16 @@ begin
         end
         else
         if Elemento is TPasProcedureBase then
+        begin
           if Pos('.', TPasProcedureBase(Elemento).Name) <> 0 then
             Continue
           else
             if IsClosure then
               WriteClosure(TPasProcedure(Elemento), Indent)
             else
-              WriteProcedure(TPasProcedure(Elemento), Indent)
+              if not WriteProcedure(TPasProcedure(Elemento), Indent) then
+                 Continue;
+        end
         else
           Writeln(G, 'Unknown declaration: ', Elemento.Name);
         Writeln(G);
@@ -940,7 +959,7 @@ begin
   Tree := TPasTree.Create;
   Tree.NeedComments := True;
   try
-    Modulo := ParseSource(Tree, (*'/Users/barbara/Downloads/Pas2Groovy-2.pas'*)ParamStr(1) + ' -Sdelphi', 'WINDOWS', 'i386');
+    Modulo := ParseSource(Tree, 'C:\trabalho\pas2dart\pas2dart.pas'(*ParamStr(1) *)+ ' -Sdelphi', 'WINDOWS', 'i386');
   except
     on E: EParserError do
     begin
@@ -948,13 +967,13 @@ begin
       Halt;
     end;
   end;
-  AssignFile(G, (*'/Users/barbara/Downloads/Pas2Groovy-2.groovy'*)Modulo.Name + '.groovy');
+  AssignFile(G, 'C:\trabalho\pas2dart\' + Modulo.Name + '.dart');
   Rewrite(G);
-  Writeln(G, 'package ', Modulo.Name, LF);
+  Writeln(G, 'library ', Modulo.Name, ';', LF);
   if Modulo is TPasProgram then
   begin
     WriteDecls(TPasProgram(Modulo).ProgramSection, '');
-    WriteCommandBlock(Modulo.InitializationSection as TPasImplBlock, '', '// Main' + LF + LF, '', SemChaves);
+    WriteCommandBlock(Modulo.InitializationSection as TPasImplBlock, '', 'void main(List<String> args)', '', ComChaves);
   end
   else
   begin
@@ -967,16 +986,3 @@ begin
   FuncWithByRefs.Free;
   Close(G);
 end.
-(*          if (I = 0) or not(TPasElement(Decl.Declarations[I - 1]) is TPasConst) then
-          begin
-            Writeln(G, LF, Indent, 'import static Consts.*', LF);
-            Writeln(G, Indent, 'class Consts {');
-          end;
-          repeat
-            WriteVar(TPasConst(Elemento), Indent + TAB); // static final <tipo> <const> = <value>
-            Writeln(G);
-            Inc(I);
-            if I >= Decl.Declarations.Count then Break;
-            Elemento := TPasElement(Decl.Declarations[I]);
-          until not(Elemento is TPasConst);
-          Writeln(G, Indent, '}');*)
