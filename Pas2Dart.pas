@@ -513,15 +513,9 @@ begin
 end;
 
 procedure WriteArrayTypePre(ArrayType: TPasArrayType);
-var
-  I: Integer;
 begin
   with ArrayType do
-  begin
-    Write(G, ConvertType(ElType.Name));
-    for I := 0 to High(Ranges) do
-      Write(G, '[]')
-  end;
+    Write(G, DupeString('List<', High(Ranges) + 1), ConvertType(ElType.Name), DupeString('>', High(Ranges) + 1));
   Write(G, ' ');
 end;
 
