@@ -93,8 +93,8 @@ function ConvertMember(PasMember: String): String;
 var
   I: Integer;
 const
-  PascalMembers: array[0..6] of String = ('write', 'writeln', 'exit',  'inc', 'dec', 'halt', 'count');
-  DartMembers: array[0..6] of String = ('print', 'print', 'return', '++',  '--',  'exit', 'length');
+  PascalMembers: array[0..9] of String = ('write', 'writeln', 'exit',  'inc', 'dec', 'halt', 'count', 'MAXINT', 'paramstr', 'paramcount');
+  DartMembers: array[0..9] of String = ('print', 'print', 'return', '++',  '--',  'exit', 'length', '256', 'args', 'args.length');
 begin
   Result := PasMember;
   if Pos('''', Result) <> 0 then
@@ -124,14 +124,27 @@ function WriteExpr(Expr: TPasExpr; RemoveCreate: Boolean = False): String; forwa
 function WriteList(Left: String; Lista: TPasExprArray; Right: String): String;
 var
   I: Integer;
+  Expr: TPasExpr;
+  BExpr: TBinaryExpr;
 begin
   Result := '';
   Write(G, Left);
   for I := 0 to High(Lista) do
-    if (Lista[I] is TBinaryExpr) and (Lista[I].Kind in [pekRange, pekSet]) then
-      Write(G, '...', WriteExpr(Lista[I]), IfThen(I <> High(Lista), ', '))   //^^^^^^
+  begin
+    Expr := Lista[I];
+    if (Expr is TBinaryExpr) and (Expr.Kind in [pekRange, pekSet]) then
+    begin
+      BExpr := TBinaryExpr(Expr);
+      if BExpr.Left.Kind = pekNumber then
+        Write(G, 'for (var n = ', WriteExpr(BExpr.Left), '; n <= ', WriteExpr(BExpr.Right), '; n++) n')
+      else
+        Write(G, 'for (var c = ', WriteExpr(BExpr.Left), '.codeUnitAt(0); c <= ', WriteExpr(BExpr.Right), '.codeUnitAt(0); c++) ' +
+        'String.fromCharCode(c)');
+      Write(G, IfThen(I <> High(Lista), ', '));
+    end
     else
-      Write(G, WriteExpr(Lista[I]), IfThen(I <> High(Lista), ', '));
+      Write(G, WriteExpr(Expr), IfThen(I <> High(Lista), ', '));
+  end;
   Write(G, Right);
 end;
 
@@ -182,8 +195,9 @@ begin
       if (OpCode = eopSubIdent) and (Right is TParamsExpr) and (Upcase(TPrimitiveExpr(TParamsExpr(Right).Value).Value) = 'CREATE') then
         Write(G, WriteExpr(Left), WriteExpr(Right, True))
       else
-        if OpCode = eopIs then
-          Write(G, WriteExpr(Left), GetOp[OpCode], ConvertClassName(TPrimitiveExpr(Right).Value))
+        case OpCode of
+          eopIs : Write(G, WriteExpr(Left), GetOp[OpCode], ConvertClassName(TPrimitiveExpr(Right).Value));
+          eopIn : Write(G, WriteExpr(Right), '.contains(', WriteExpr(Left), ')');
         else
           if Left is TInheritedExpr then
             Write(G, 'super' + GetInherited(Expr))
@@ -198,7 +212,8 @@ begin
               Write(G, '(', WriteExpr(Right), ')')
             else
               Write(G, WriteExpr(Right));
-          end
+          end;
+        end
   else
   if Expr is TUnaryExpr then
     if (Expr.Opcode = eopNot) and not(TUnaryExpr(Expr).Operand is TPrimitiveExpr) then
@@ -216,7 +231,11 @@ begin
             '#': Value := ConvertCharLiteral(Value);
             '''':
               if Value <> '''''' then
+              begin
+                Value := ReplaceText(Value, '\', '\\');
                 Value := '''' + ReplaceText(Copy(Value, 2, Length(Value) - 2), '''', '\''') + '''';
+              end;
+            '^': Value := '''\u' + (Ord(Value[2]) - Ord('@')).ToHexString(4) + '''';
           end;
       end;
       Write(G, ConvertType(ConvertMember(Value), False), IsFuncsWithoutParams(Value))
@@ -251,6 +270,8 @@ begin
                   WriteList(WriteExpr(Value) + '(', Params, ')')
             else
               WriteList(WriteExpr(Value) + '(', Params, ')');
+        pekSet:
+          WriteList(WriteExpr(Value) + '{', Params, '}');
         else
           WriteList(WriteExpr(Value) + '[', Params, ']')
         end
@@ -639,7 +660,7 @@ begin
     AliasTypes.Add(Elemento.Name + '=Set<' + ConvertType(ConvertClassName(TPasSetType(Elemento).EnumType.Name), True) + '>')
   else
   if Elemento is TPasClassOfType then
-    AliasTypes.Add(Elemento.Name + '=MetaClass')
+    AliasTypes.Add(Elemento.Name + '=class')
   else
   if Elemento is TPasAliasType then
     AliasTypes.Add(Elemento.Name + '=' + ConvertType(TPasAliasType(Elemento).DestType.Name))
@@ -963,7 +984,6 @@ begin
   end;
   AssignFile(G, 'C:\trabalho\pas2dart\' + Modulo.Name + '.dart');
   Rewrite(G);
-  Writeln(G, 'library ', Modulo.Name, ';', LF);
   if Modulo is TPasProgram then
   begin
     WriteDecls(TPasProgram(Modulo).ProgramSection, '');
@@ -971,6 +991,7 @@ begin
   end
   else
   begin
+    Writeln(G, 'library ', Modulo.Name, ';', LF);
     WriteDecls(Modulo.InterfaceSection as TPasDeclarations, '');
     WriteDecls(Modulo.ImplementationSection as TPasDeclarations, '');
     WriteCommandBlock(Modulo.InitializationSection as TPasImplBlock, '', 'void initialization()');
