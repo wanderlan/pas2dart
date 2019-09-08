@@ -373,15 +373,16 @@ begin
         for I := I to Args.Count - 1 do
         begin
           P := PtrInt(Args.Objects[I]);
-          if (P < FuncParams.Count) and IsValidIdent(FuncParams[P]) then
-            Atrib := Atrib + ConvertMember(FuncParams[P]) + IfThen(I <> Args.Count - 1, ', ')
+          if (P < FuncParams.Count) and IsValidIdent(Trim(FuncParams[P])) then
+            Atrib := Atrib + Indent + ConvertMember(Trim(FuncParams[P])) + ' = ret[' + IntToStr(I) + '];' + LF
           else
-            Exit;
+            Continue;
         end;
         IfSmt := Pos('return', Variable) = 1;
         if IfSmt then
           Writeln(G, Indent, 'bool ', Variable, LF);
-        Writeln(G, Indent, '(', Atrib, ') = ', WriteExpr(Func));
+        Writeln(G, Indent, 'var ret = ', WriteExpr(Func), ';');
+        Write(G, Atrib);
         if IfSmt then
           Write(G, Indent, 'if (', Variable, ')');
         Result := True;
@@ -816,7 +817,7 @@ begin
     else
       FuncType := 'void';
     Write(G, IfThen((Proc is TPasConstructor) or (TPasElement(Proc) is TPasConstructorImpl), ConvertClassName(Proc.Parent.Name),
-      IfThen(ByRefArgs.Count > 0, '', FuncType) + ' ' + ConvertMember(Proc.Name)));
+      IfThen(ByRefArgs.Count > 0, '', FuncType + ' ') + ConvertMember(Proc.Name)));
     WriteProcParams(Proc.ProcType.Args);
     WriteProcBody(Proc, Indent, FuncType, False);
   end
@@ -985,7 +986,16 @@ var
   Modulo: TPasModule;
   Tree: TPasTree;
 
+procedure teste(x, y: integer);
 begin
+  x := 3;
+  y := 6
+end;
+
+var
+  a, b: integer;
+begin
+  teste(a, b);
   AliasTypes := TStringList.Create;
   EnumTypes := TStringList.Create;
   FuncWithByRefs := TStringList.Create;
