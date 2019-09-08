@@ -9,4 +9,4 @@ TODO:
 4. Transpile multiple sources using 'uses' declaration
 5. Create standard Dart project from lpr/dpr files
 6. Create helper lib to emulate some Delphi functions in Dart converted app 
-7. Convert simple LCL/VCL forms to Flutter
+7. Convert simple LCL/VCL forms to Flutter, using [Flutter for desktop](https://medium.com/flutter-community/flutter-for-desktop-create-and-run-a-desktop-application-ebeb1604f1e0)
