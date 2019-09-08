@@ -1,11 +1,12 @@
 # pas2dart
-Object Pascal (Free Pascal 3.0) to Dart (2.4.1) - Transpiler
+Object Pascal (Free Pascal 3.0, Delphi 2007) to Dart (2.4.1) - Transpiler
 
 TODO:
 
-1. Convert 'with' statements, removing 'withs'...
-2. Convert some usual string functions from infix (imperative) old style to postfix (OO) new style
-3. Transpile multiple sources using 'uses' declaration
-4. Create standard Dart project from lpr/dpr files
-5. Create helper lib to emulate Delphi functions in Dart converted app 
-6. Convert simple LCL/VCL forms to Flutter
+1. Convert properties (read/write) to get/set Dart style
+2. Convert 'with' statements, removing 'withs'...
+3. Convert some usual string functions from infix (imperative) old style to postfix (OO) new style
+4. Transpile multiple sources using 'uses' declaration
+5. Create standard Dart project from lpr/dpr files
+6. Create helper lib to emulate some Delphi functions in Dart converted app 
+7. Convert simple LCL/VCL forms to Flutter
