@@ -25,7 +25,7 @@ begin // dummy implementation, see TFPDocEngine.FindElement for a real example
 end;
 
 var
-  AliasTypes: TStringList;
+  AliasTypes, EnumTypes: TStringList;
   G: Text;
   InFunction: Boolean = False;
   ByRefArgs: TStringList;
@@ -181,12 +181,20 @@ begin
     Result := Result + IntToHex(StrToInt(Copy(Value, 2, 3)), 2) + '''';
 end;
 
+function ConvertPrefixToSufix(Value: String): String;
+const
+  Map = 'length=length,trim=trim(),upcase=toUpperCase(),uppercase=toUpperCase(),lowercase=toLowerCase(),trimleft=trimLeft(),trimright=trimRight()';
+begin
+ // trim
+end;
+
 function WriteExpr(Expr: TPasExpr; RemoveCreate: Boolean = False): String;
 var
   I: Integer;
   GetOp: array[TExprOpCode] of String = ('..', ' + ', ' - ', ' * ', ' / ', ' ~/ ', ' % ', ' ** ', ' >> ', ' << ', '!', ' && ', ' || ',
     ' ^ ', ' == ', ' != ', ' < ', ' > ', ' <= ', ' >= ', '.contains(', ' is ', ' as ', '.difference(', '', '', '', '.');
   DartBool: array[Boolean] of String = ('false', 'true');
+  CompleteEnum: String;
 begin
   Result := '';
   if not Assigned(Expr) then Exit;
@@ -237,6 +245,15 @@ begin
               end;
             '^': Value := '''\u' + (Ord(Value[2]) - Ord('@')).ToHexString(4) + '''';
           end;
+        pekIdent:
+        begin
+          CompleteEnum := EnumTypes.Values[Value];
+          if CompleteEnum <> '' then
+          begin
+            Write(G, CompleteEnum + '.' + ConvertMember(Value));
+            Exit;
+          end;
+        end;
       end;
       Write(G, ConvertType(ConvertMember(Value), False), IsFuncsWithoutParams(Value))
     end
@@ -262,7 +279,7 @@ begin
           else
             if (Length(Params) = 1) and (Value.Kind = pekIdent) then
               if IsClassName(TPrimitiveExpr(Value).Value) then
-                WriteList('(' + ConvertClassName(TPrimitiveExpr(Value).Value) + ')', Params, '')
+                WriteList('(', Params, ' as ' + ConvertClassName(TPrimitiveExpr(Value).Value) + ')')
               else
                 if ConvertMember(TPrimitiveExpr(Value).Value)[1] in ['-', '+'] then
                   Write(G, WriteExpr(Params[0]), ConvertMember(TPrimitiveExpr(Value).Value))
@@ -422,7 +439,7 @@ begin
   if Smt is TPasImplExceptOn then
     with TPasImplExceptOn(Smt) do
     begin
-      Write(G, Indent, 'on ', ConvertType(TypeName), 'catch (', ConvertMember(VariableName), ')');
+      Write(G, Indent, 'on ', ConvertType(TypeName), ' catch (', ConvertMember(VariableName), ')');
       WriteImplElement(Body, Indent, IfThen(TPasImplElement(Body) is TPasImplRaise, 'throw '), ComChaves)
     end
   else
@@ -450,7 +467,11 @@ end;
 
 procedure WriteImplElement(Comando: TPasImplElement; Indent: String; Aditional: String = ''; Fechamento: TFechamento = SemChaves);
 begin
-  if not Assigned(Comando) then Exit;
+  if not Assigned(Comando) then
+  begin
+    Writeln(G, ' ;');
+    Exit;
+  end;
   Write(G, Aditional);
   if Fechamento in [ComChaves, ComChavesSemSalto] then
   begin
@@ -466,7 +487,8 @@ begin
       if not WriteByRefFunction(ConditionExpr, 'return' + IntToStr(SourceLinenumber), Indent) then
         Write(G, Indent, 'if (', WriteExpr(ConditionExpr), ')');
       WriteImplElement(IfBranch, Indent, '', ComChaves);
-      WriteImplElement(ElseBranch, Indent, Indent + 'else', ComChaves);
+      if Assigned(ElseBranch) then
+        WriteImplElement(ElseBranch, Indent, Indent + 'else', ComChaves);
     end
   else
   if Comando is TPasImplCaseOf then
@@ -493,7 +515,8 @@ begin
       Write(G, Indent, 'try');
       WriteBlock(TPasImplBlock(Comando), Indent);
       WriteImplElement(TPasImplElement(FinallyExcept), Indent);
-      WriteImplElement(TPasImplElement(ElseBranch), Indent);
+      if Assigned(ElseBranch) then
+        WriteImplElement(TPasImplElement(ElseBranch), Indent);
     end
   else
   if Comando is TPasImplTryFinally then
@@ -533,28 +556,16 @@ begin
   if Fechamento in [ComChaves, SoFinal] then Writeln(G, Indent, '}')
 end;
 
-procedure WriteArrayTypePre(ArrayType: TPasArrayType);
+function GetArrayTypePos(ArrayType: TPasArrayType): String;
 begin
   with ArrayType do
-    Write(G, DupeString('List<', High(Ranges) + 1), ConvertType(ElType.Name), DupeString('>', High(Ranges) + 1));
-  Write(G, ' ');
+    Result := DupeString('List<', High(Ranges) + 1) + ConvertType(ElType.Name) + DupeString('>', High(Ranges) + 1)
 end;
 
-function GetArrayTypePos(ArrayType: TPasArrayType): String;
-var
-  I: Integer;
+procedure WriteArrayTypePre(ArrayType: TPasArrayType);
 begin
-  with ArrayType do
-  begin
-    Result := ConvertType(ElType.Name);
-    for I := 0 to High(Ranges) do
-      if Ranges[I] is TBinaryExpr then
-        with TBinaryExpr(Ranges[I]) do
-          Result := Result + '[' + TPrimitiveExpr(Right).Value + ' + 1' + IfThen(TPrimitiveExpr(Left).Value <> '0', ' - ' + TPrimitiveExpr(Left).Value) + ']'
-      else
-        with TPrimitiveExpr(Ranges[I]) do
-          Result := Result + '[' + IfThen(Pos(UpperCase(Value), 'CHAR"BYTE') <> 0, '256', Value) + ']';
-  end;
+  Write(G, GetArrayTypePos(ArrayType));
+  Write(G, ' ');
 end;
 
 procedure WriteVar(Variavel: TPasVariable; Indent: String); forward;
@@ -627,16 +638,22 @@ end;
 procedure WriteTypes(Elemento: TPasElement; Indent: String);
 var
   I: Integer;
+  EnumType, EnumName: String;
 begin
   if Elemento is TPasArrayType then
     AliasTypes.Add(Elemento.Name + '=' + GetArrayTypePos(TPasArrayType(Elemento)))
   else
   if Elemento is TPasEnumType then
   begin
-    Write(G, Indent, 'enum ' + ConvertClassName(Elemento.Name) + ' {');
+    EnumType := ConvertClassName(Elemento.Name);
+    Write(G, Indent, 'enum ' + EnumType + ' {');
     with TPasEnumType(Elemento) do
       for I := 0 to Values.Count - 1 do
-        Write(G, ConvertMember(TPasEnumValue(Values[I]).Name), IfThen(I < (Values.Count - 1), ', '));
+      begin
+        EnumName := ConvertMember(TPasEnumValue(Values[I]).Name);
+        EnumTypes.Add(EnumName + '=' + EnumType);
+        Write(G, EnumName, IfThen(I < (Values.Count - 1), ', '));
+      end;
     Writeln(G, '}', LF);
   end
   else
@@ -651,7 +668,7 @@ begin
   else
   if Elemento is TPasRangeType then
     with TPasRangeType(Elemento) do
-      AliasTypes.Add(Name + '=' + IfThen(RangeStart[1] in ['0'..'9'], 'Byte', '(' + RangeStart + '..' + RangeEnd + ')'))
+      AliasTypes.Add(Name + '=int')
   else
   if Elemento is TPasRecordType then
     WriteRecord(TPasRecordType(Elemento), Indent)
@@ -970,6 +987,7 @@ var
 
 begin
   AliasTypes := TStringList.Create;
+  EnumTypes := TStringList.Create;
   FuncWithByRefs := TStringList.Create;
   Tree := TPasTree.Create;
   Tree.NeedComments := True;
