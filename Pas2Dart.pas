@@ -89,6 +89,11 @@ begin
   end;
 end;
 
+function CamelCase(Ident: String): String;
+begin
+  Result := LowerCase(Ident[1]) + Copy(Ident, 2, Length(Ident));
+end;
+
 function ConvertMember(PasMember: String): String;
 var
   I: Integer;
@@ -101,9 +106,17 @@ begin
     exit;
   I := Pos('.', Result);
   if I <> 0 then
-    Result := Copy(Result, I + 1, MAXINT);
-  if (Length(Result) > 1) and (Result[Length(Result)] in ['A'..'Z']) then Exit;
-  Result := LowerCase(Result[1]) + Copy(Result, 2, Length(Result));
+    Result := Copy(Result, I + 1, 100);
+  if Length(Result) > 1 then
+  begin
+    if Result[Length(Result)] in ['A'..'Z'] then Exit;
+    if (LowerCase(Result[1]) = 'f') and (Result[2] in ['A'..'Z']) then
+    begin
+      Result := '_' + CamelCase(Copy(Result, 2, 100));
+      Exit;
+    end;
+  end;
+  Result := CamelCase(Result);
   I := AnsiIndexText(Result, PascalMembers);
   if I >= 0 then
   begin
@@ -241,7 +254,9 @@ begin
               if Value <> '''''' then
               begin
                 Value := ReplaceText(Value, '\', '\\');
-                Value := '''' + ReplaceText(Copy(Value, 2, Length(Value) - 2), '''', '\''') + '''';
+                Value := ReplaceText(Value, '%s', '$s');
+                Value := ReplaceText(Value, '%d', '$d');
+                Value := '''' + ReplaceText(Copy(Value, 2, Length(Value) - 2), '''''', '"') + '''';
               end;
             '^': Value := '''\u' + (Ord(Value[2]) - Ord('@')).ToHexString(4) + '''';
           end;
@@ -303,7 +318,7 @@ begin
       Write(G, '{');
       for I := 0 to High(Fields) do
         with TRecordValuesItem(Fields[I]) do
-          Write(G, Name, ': ', WriteExpr(ValueExp), IfThen(I <> High(Fields), ', '));
+          Write(G, Name, ': ', WriteExpr(ValueExp), IfThen(I <> High(Fields), ','));
       Write(G, '}');
     end
   else
@@ -603,6 +618,22 @@ begin
   end
 end;
 
+function WritePropertyType(VarType: TPasType): String;
+begin
+  Result := '';
+  if Assigned(VarType) then
+    if VarType is TPasArrayType then
+      Result := GetArrayTypePos(TPasArrayType(VarType))
+    else
+    if VarType is TPasSetType then
+      Result := 'Set<' + ConvertType(ConvertClassName(TPasSetType(VarType).EnumType.Name), True) + '>'
+    else
+    if VarType is TPasPointerType then
+      Result := 'Object'
+    else
+      Result := ConvertType(VarType.Name);
+end;
+
 procedure WriteVar(Variavel: TPasVariable; Indent: String);
 begin
   if Assigned(Variavel) then
@@ -619,7 +650,7 @@ begin
             Write(G, ConvertMember(Name), ' = ', WriteExpr(Expr));
           end
           else
-            Write(G, 'var ', ConvertMember(Name), ' =', GetArrayTypePos(TPasArrayType(VarType)));
+            Write(G, 'var ', ConvertMember(Name), ' = ', GetArrayTypePos(TPasArrayType(VarType)));
           Write(G, ';');
           Exit;
         end
@@ -655,15 +686,15 @@ begin
   if Elemento is TPasEnumType then
   begin
     EnumType := ConvertClassName(Elemento.Name);
-    Write(G, Indent, 'enum ' + EnumType + ' {');
+    Writeln(G, Indent, 'enum ' + EnumType + ' {');
     with TPasEnumType(Elemento) do
       for I := 0 to Values.Count - 1 do
       begin
         EnumName := ConvertMember(TPasEnumValue(Values[I]).Name);
         EnumTypes.Add(EnumName + '=' + EnumType);
-        Write(G, EnumName, IfThen(I < (Values.Count - 1), ', '));
+        Writeln(G, Indent, TAB, EnumName, IfThen(I < (Values.Count - 1), ', '));
       end;
-    Writeln(G, '}', LF);
+    Writeln(G, Indent + '}', LF);
   end
   else
   if Elemento is TPasFileType then
@@ -786,7 +817,10 @@ begin
     if InFunction or (ByRefArgs.Count > 0) then
       Returns := 'return ' + IfThen(ByRefArgs.Count > 0, '[' + ListToStr(ByRefArgs) + ']', 'result') + ';';
     WriteBlock(TPasImplBlock(Proc.Body.Body), Indent, Returns, SoFinal);
-  end;
+  end
+  else
+    Write(G, ';');
+
 end;
 
 procedure WriteClosure(Proc: TPasProcedure; Indent: String);
@@ -900,20 +934,35 @@ begin
     begin
       Elemento := TPasElement(Members[I]);
       if Elemento.Name = '' then Continue;
+      if (I <> 0) and (TPasElement(Members[I - 1]) is TPasVariable) and not (Elemento is TPasVariable) then
+        Writeln(G);
       Write(G, Elemento.DocComment);
-      Elemento.Name := GetVisibility[Elemento.Visibility] + Elemento.Name;
       Prefix := Indent + TAB;
-      if Elemento is TPasVariable then
-        WriteVar(TPasVariable(Elemento), Prefix)
-      else
       if Elemento is TPasProcedure then
+      begin
+        Elemento.Name := GetVisibility[Elemento.Visibility] + Elemento.Name;
         WriteProcedure(TPasProcedure(Elemento), Indent + TAB)
+      end
       else
-      if Elemento is TPasProperty then
-        with TPasProperty(Elemento) do       //*********
-          Writeln(G, Prefix, IfThen(WriteAccessorName = '', 'final '), ConvertType(TPasType(VarType).Name), Name)
-      else
-        Writeln(G, 'Unknown declaration in class/interface: ', Elemento.Name);
+      begin
+        Elemento.Name := ConvertMember(Elemento.Name);
+        if Elemento is TPasProperty then
+          with TPasProperty(Elemento) do
+          begin
+            if ReadAccessor <> nil then
+              Write(G, Prefix, WritePropertyType(VarType), ' get ', CamelCase(Name), ' => ', WriteExpr(ReadAccessor), ';');
+            if WriteAccessor <> nil then
+            begin
+              if ReadAccessor <> nil then Writeln(G);
+              Write(G, Prefix, 'set ', CamelCase(Name), '(', WritePropertyType(VarType), ' value) => ', ConvertMember(WriteAccessorName), ' = value;');
+            end;
+          end
+        else
+        if Elemento is TPasVariable then
+          WriteVar(TPasVariable(Elemento), Prefix)
+        else
+          Writeln(G, 'Unknown declaration in class/interface: ', Elemento.Name);
+      end;
       Writeln(G);
     end;
     Writeln(G, Indent, '}');
@@ -930,7 +979,7 @@ end;
 function WriteDecls(Decl: TPasDeclarations; Indent: String; IsClosure: Boolean = False): Boolean;
 var
   I: Integer;
-  Elemento: TPasElement;
+  Elemento, ElementoProx: TPasElement;
 begin
   Result := False;
   if Assigned(Decl) then
@@ -955,6 +1004,7 @@ begin
     begin
       for I := 0 to Decl.Declarations.Count - 1 do
       begin
+        Flush(G);
         Elemento := TPasElement(Decl.Declarations[I]);
         if Elemento.DocComment <> '' then
           Writeln(G, '//', Elemento.DocComment);
@@ -990,9 +1040,13 @@ begin
         else
           Writeln(G, 'Unknown declaration: ', Elemento.Name);
         Writeln(G);
-        if (Elemento is TPasVariable) and
-           ((I < (Decl.Declarations.Count - 1)) and not(TPasElement(Decl.Declarations[I + 1]) is TPasVariable)) then
-          Writeln(G);
+        if I < (Decl.Declarations.Count - 1) then
+        begin
+          ElementoProx := TPasElement(Decl.Declarations[I + 1]);
+          if ((Elemento is TPasVariable) or (Elemento is TPasResString)) and
+             not((ElementoProx is TPasVariable) or (ElementoProx is TPasResString)) then
+            Writeln(G);
+        end;
       end;
       Result := Decl.Declarations.Count <> 0;
       if Result then
