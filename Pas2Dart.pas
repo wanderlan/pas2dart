@@ -904,6 +904,24 @@ begin
   end;
 end;
 
+function HasAbstractMethod(Class_: TPasClassType): Boolean;
+var
+  I: Integer;
+  Elemento: TPasElement;
+begin
+  Result := false;
+  with Class_ do
+    for I := 0 to Members.Count - 1 do
+    begin
+      Elemento := TPasElement(Members[I]);
+      if (Elemento is TPasProcedure) and TPasProcedure(Elemento).IsAbstract then
+      begin
+        Result := true;
+        Exit;
+      end;
+    end;
+end;
+
 procedure WriteClass(Class_: TPasClassType; Indent: String);
 var
   GetVisibility: array[TPasMemberVisibility] of String = ('', '_', '', '', '', '', '_', '');
@@ -915,7 +933,7 @@ begin
     with Class_ do
     begin
       Write(G, DocComment);
-      Write(G, Indent, IfThen(ObjKind = okInterface, 'abstract class ', 'class '), ConvertClassName(Name));
+      Write(G, Indent, IfThen((ObjKind = okInterface) or IsAbstract or HasAbstractMethod(Class_), 'abstract class ', 'class '), ConvertClassName(Name));
     if Assigned(AncestorType) and (AncestorType.ElementTypeName <> '') then
       Write(G, ' extends ', ConvertClassName(AncestorType.Name));
     if Assigned(Interfaces) and (Interfaces.Count > 0) then
