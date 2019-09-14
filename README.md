@@ -3,7 +3,7 @@ Object Pascal (Free Pascal 3.0, Delphi 2007) to Dart (2.4.1) - Transpiler
 
 TODO:
 
-1. Convert properties (read/write) to get/set Dart style
+1. ~~Convert properties (read/write) to get/set Dart style~~
 2. Convert 'with' statements, removing 'withs'...
 3. Convert some usual string functions from infix (imperative) old style to postfix (OO) new style
 4. Transpile multiple sources using 'uses' declaration
