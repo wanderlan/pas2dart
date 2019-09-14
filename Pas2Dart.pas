@@ -461,7 +461,7 @@ begin
     end
   else
   if Smt is TPasImplRaise then
-    WriteImplElement(TPasImplElement(Smt), Indent, 'throw ')
+    Write(G, Indent, 'throw ', WriteExpr(TPasImplRaise(Smt).ExceptObject))
   else
     WriteBlock(Smt, Indent + TAB);
 end;
@@ -487,9 +487,11 @@ begin
     begin
       if not WriteByRefFunction(ConditionExpr, 'return' + IntToStr(SourceLinenumber), Indent) then
         Write(G, Indent, 'if (', WriteExpr(ConditionExpr), ')');
-      WriteImplElement(IfBranch, Indent, '', ComChaves);
+      WriteImplElement(IfBranch, Indent, '', ComChavesSemSalto);
       if Assigned(ElseBranch) then
-        WriteImplElement(ElseBranch, Indent, Indent + 'else', ComChaves);
+        WriteImplElement(ElseBranch, Indent, ' else', ComChaves)
+      else
+        Writeln(G);
     end
   else
   if Comando is TPasImplCaseOf then
@@ -506,8 +508,8 @@ begin
   else
   if Comando is TPasImplRepeatUntil then
   begin
-    WriteCommandBlock(TPasImplBlock(Comando), Indent, 'do {' + LF, '', SemChaves);
-    Writeln(G, Indent, '} while (!', WriteExpr(TPasImplRepeatUntil(Comando).ConditionExpr), ');')
+    WriteCommandBlock(TPasImplBlock(Comando), Indent, 'do', '', ComChavesSemSalto);
+    Writeln(G, ' while (!', WriteExpr(TPasImplRepeatUntil(Comando).ConditionExpr), ');')
   end
   else
   if Comando is TPasImplTry then
@@ -544,7 +546,7 @@ var
 begin
   if not Assigned(Block) then Exit;
   case Fechamento of
-    ComChaves, SoInicio: Writeln(G, ' {');
+    ComChaves, SoInicio, ComChavesSemSalto: Writeln(G, ' {');
     SemChaves: Indent := Copy(Indent, 1, Length(Indent) - Length(TAB));
   end;
   with Block do
@@ -554,13 +556,19 @@ begin
           WriteImplElement(TPasImplElement(Elements[I]), Indent + TAB);
   if Aditional <> '' then
     Writeln(G, Indent + TAB, Aditional);
-  if Fechamento in [ComChaves, SoFinal] then Writeln(G, Indent, '}')
+  case Fechamento of
+    ComChaves, SoFinal: Writeln(G, Indent, '}');
+    ComChavesSemSalto:  Write(G, Indent, '}');
+  end;
 end;
 
 function GetArrayTypePos(ArrayType: TPasArrayType): String;
 begin
   with ArrayType do
-    Result := DupeString('List<', High(Ranges) + 1) + ConvertType(ElType.Name) + DupeString('>', High(Ranges) + 1)
+    if ElType = nil then
+      Result := 'List'
+    else
+      Result := DupeString('List<', High(Ranges) + 1) + ConvertType(ElType.Name) + DupeString('>', High(Ranges) + 1)
 end;
 
 procedure WriteArrayTypePre(ArrayType: TPasArrayType);
@@ -695,7 +703,8 @@ begin
   if Assigned(Proc.Body) then Exit;
   Secao := Proc.Parent.Parent;
   if not(Secao is TImplementationSection) then
-    Secao := TPasModule(Secao.Parent).ImplementationSection;
+    if TPasModule(Secao.Parent) <> nil then
+      Secao := TPasModule(Secao.Parent).ImplementationSection;
   if Secao is TImplementationSection then
     with TPasDeclarations(Secao) do
       for I := 0 to Declarations.Count - 1 do
@@ -800,7 +809,7 @@ begin
   InFunction := False;
 end;
 
-function WriteProcedure(Proc: TPasProcedure; Indent: String; Visibility: String = ''): Boolean;
+function WriteProcedure(Proc: TPasProcedure; Indent: String): Boolean;
 var
   FuncType: String;
 begin
@@ -809,7 +818,7 @@ begin
     Result := true;
     if Proc.IsOverride then
       Write(G, Indent, '@override', LF);
-    Write(G, Indent, Visibility, IfThen((Proc is TPasClassProcedure) or (Proc is TPasClassFunction), 'static '));
+    Write(G, Indent, IfThen((Proc is TPasClassProcedure) or (Proc is TPasClassFunction), 'static '));
     InFunction := Proc.ProcType is TPasFunctionType;
     ByRefArgs := GetByRefArgs(Proc.ProcType.Args, InFunction);
     if InFunction then
@@ -885,7 +894,7 @@ begin
       end;
     end;
     Writeln(G, ' {');
-    RemoveReadPrivates(Class_);
+    // RemoveReadPrivates(Class_);
     GetFuncsWithoutParams(Members);
     for I := 0 to Members.Count - 1 do
     begin
@@ -909,6 +918,13 @@ begin
     end;
     Writeln(G, Indent, '}');
   end;
+end;
+
+procedure WriteResString(Variavel: TPasResString);
+begin
+  if Assigned(Variavel) then
+    with Variavel do
+      Write(G, 'const ', ConvertMember(Name), ' = ', WriteExpr(Expr), ';');
 end;
 
 function WriteDecls(Decl: TPasDeclarations; Indent: String; IsClosure: Boolean = False): Boolean;
@@ -944,6 +960,9 @@ begin
           Writeln(G, '//', Elemento.DocComment);
         if Elemento is TPasConst then
           WriteVar(TPasConst(Elemento), Indent) // static final <tipo> <const> = <value>
+        else
+        if Elemento is TPasResString then
+          WriteResString(TPasResString(Elemento))
         else
         if Elemento is TPasVariable then
           WriteVar(TPasVariable(Elemento), Indent) // <tipo> <const> = <value>
@@ -986,23 +1005,14 @@ var
   Modulo: TPasModule;
   Tree: TPasTree;
 
-procedure teste(x, y: integer);
 begin
-  x := 3;
-  y := 6
-end;
-
-var
-  a, b: integer;
-begin
-  teste(a, b);
   AliasTypes := TStringList.Create;
   EnumTypes := TStringList.Create;
   FuncWithByRefs := TStringList.Create;
   Tree := TPasTree.Create;
   Tree.NeedComments := True;
   try
-    Modulo := ParseSource(Tree, 'C:\trabalho\pas2dart\pas2dart.pas'(*ParamStr(1) *)+ ' -Sdelphi', 'WINDOWS', 'i386');
+    Modulo := ParseSource(Tree, ParamStr(1) + ' -Sdelphi', 'WINDOWS', 'i386');
   except
     on E: EParserError do
     begin
