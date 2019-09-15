@@ -1,5 +1,5 @@
 # pas2dart
-Object Pascal (Free Pascal 3.0, Delphi 2007) to Dart (2.4.1) - Transpiler
+Object Pascal (Free Pascal 3, Delphi 2007) to Dart (2.5) - Transpiler
 
 TODO:
 
