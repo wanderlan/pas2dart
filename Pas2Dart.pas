@@ -30,8 +30,7 @@ var
   InFunction: Boolean = False;
   ByRefArgs: TStringList;
   FuncWithByRefs: TStringList;
-  LastParams: String;
-  FuncsWithoutParams: String = '"';
+  FuncsWithoutParams: String = '"DESTROY"';
 
 const
   LF  = ^M + ^J;
@@ -94,6 +93,19 @@ begin
   Result := LowerCase(Ident[1]) + Copy(Ident, 2, Length(Ident));
 end;
 
+function IsAllUpper(Ident: String): Boolean;
+var
+  C: Char;
+begin
+  Result := true;
+  for C in Ident do
+    if not(C in ['A'..'Z', '_']) then
+    begin
+      Result := false;
+      Exit;
+    end;
+end;
+
 function ConvertMember(PasMember: String): String;
 var
   I: Integer;
@@ -103,18 +115,23 @@ const
 begin
   Result := PasMember;
   if Pos('''', Result) <> 0 then
-    exit;
-  I := Pos('.', Result);
-  if I <> 0 then
-    Result := Copy(Result, I + 1, 100);
+    Exit;
   if Length(Result) > 1 then
   begin
-    if Result[Length(Result)] in ['A'..'Z'] then Exit;
-    if (LowerCase(Result[1]) = 'f') and (Result[2] in ['A'..'Z']) then
-    begin
-      Result := '_' + CamelCase(Copy(Result, 2, 100));
-      Exit;
-    end;
+    if IsAllUpper(Result) then Exit;
+    if Result[2] in ['A'..'Z'] then
+      case LowerCase(Result[1]) of
+        'f':
+        begin
+          Result := '_' + CamelCase(Copy(Result, 2, 100));
+          Exit;
+        end;
+        'e', 't':
+        begin
+          Result := Copy(Result, 2, 100);
+          Exit;
+        end;
+      end;
   end;
   Result := CamelCase(Result);
   I := AnsiIndexText(Result, PascalMembers);
@@ -161,25 +178,6 @@ begin
   Write(G, Right);
 end;
 
-function GetInherited(Expr: TPasExpr): String;
-var
-  Elemento: TPasElement;
-begin
-  Result := '()';
-  Elemento := Expr.Parent;
-  while Elemento <> nil do
-  begin
-    if Elemento is TPasConstructor then
-      Exit;
-    if Elemento is TPasProcedure then
-    begin
-      Result := '.' + ConvertMember(Elemento.Name) + '(' + LastParams + ')';
-      Exit;
-    end;
-    Elemento := Elemento.Parent;
-  end;
-end;
-
 function IsFuncsWithoutParams(Func: String): String;
 begin
   Result := IfThen(Pos('"' + UpperCase(Func) + '"', FuncsWithoutParams) = 0, '', '()');
@@ -207,7 +205,7 @@ var
   GetOp: array[TExprOpCode] of String = ('..', ' + ', ' - ', ' * ', ' / ', ' ~/ ', ' % ', ' ** ', ' >> ', ' << ', '!', ' && ', ' || ',
     ' ^ ', ' == ', ' != ', ' < ', ' > ', ' <= ', ' >= ', '.contains(', ' is ', ' as ', '.difference(', '', '', '', '.');
   DartBool: array[Boolean] of String = ('false', 'true');
-  CompleteEnum: String;
+  CompleteEnum, Member: String;
 begin
   Result := '';
   if not Assigned(Expr) then Exit;
@@ -221,13 +219,19 @@ begin
           eopIn : Write(G, WriteExpr(Right), '.contains(', WriteExpr(Left), ')');
         else
           if Left is TInheritedExpr then
-            Write(G, 'super' + GetInherited(Expr))
+            Write(G, 'super', WriteExpr(Right, true))
           else
           begin
             if (Left is TBinaryExpr) and (TBinaryExpr(Left).OpCode in ([eopAdd..eopAs] - [OpCode])) then
               Write(G, '(', WriteExpr(Left), ')')
             else
               Write(G, WriteExpr(Left));
+            if (Right is TPrimitiveExpr) and (TPrimitiveExpr(Right).Kind = pekIdent) and (OpCode = eopSubIdent) and
+               (LowerCase(TPrimitiveExpr(Right).Value) = 'create') then
+              begin
+                Write(G, '()');
+                Exit;
+              end;
             Write(G, GetOp[OpCode]);
             if (Right is TBinaryExpr) and (TBinaryExpr(Right).OpCode in ([eopAdd..eopAs] - [OpCode])) then
               Write(G, '(', WriteExpr(Right), ')')
@@ -245,6 +249,7 @@ begin
   if Expr is TPrimitiveExpr then
     with TPrimitiveExpr(Expr) do
     begin
+      Member := ConvertMember(Value);
       case Kind of
         pekNumber: Value := ReplaceText(Value, '$', '0x');
         pekString:
@@ -265,12 +270,20 @@ begin
           CompleteEnum := EnumTypes.Values[Value];
           if CompleteEnum <> '' then
           begin
-            Write(G, CompleteEnum + '.' + ConvertMember(Value));
+            Write(G, CompleteEnum + '.' + Member);
             Exit;
           end;
+          if RemoveCreate then
+            if Member = 'create' then
+            begin
+              Write(G, '()');
+              Exit;
+            end
+            else
+              Write(G, '.');
         end;
       end;
-      Write(G, ConvertType(ConvertMember(Value), False), IsFuncsWithoutParams(Value))
+      Write(G, ConvertType(Member, False), IsFuncsWithoutParams(Value))
     end
   else
   if Expr is TBoolConstExpr then
@@ -280,7 +293,7 @@ begin
     Write(G, 'null')
   else
   if Expr is TInheritedExpr then
-    Write(G, 'super' + GetInherited(Expr))
+    Write(G, 'super()')
   else
   if Expr is TSelfExpr then
     Write(G, 'this')
@@ -408,13 +421,23 @@ end;
 procedure WriteSmt(Smt: TPasImplStatement; Indent: String);
 var
   I: Integer;
+  ExceptObj: TPasExpr;
 begin
   if Smt is TPasImplSimple then
     with TPasImplSimple(Smt) do
     begin
+      if Expr is TBinaryExpr then
+      begin
+        if (TBinaryExpr(Expr).Right is TPrimitiveExpr) and
+          AnsiEndsText('free', TPrimitiveExpr(TBinaryExpr(Expr).Right).Value) then
+        Exit;
+      end
+      else
+      if (Expr is TParamsExpr) and (TPasExpr(TParamsExpr(Expr).Value) is TPrimitiveExpr) and
+        AnsiContainsText('FreeAndNil', TPrimitiveExpr(TPasExpr(TParamsExpr(Expr).Value)).Value) then
+        Exit;
       if not WriteByRefFunction(Expr, '', Indent) then
-        Writeln(G, Indent, WriteExpr(Expr),
-          IfThen((Expr is TPrimitiveExpr) and (Pos('"' + UpperCase(TPrimitiveExpr(Expr).Value) + '"', '"EXIT"BREAK"CONTINUE"') = 0) , '()'), ';')
+        Writeln(G, Indent, WriteExpr(Expr), ';')
     end
   else
   if Smt is TPasImplAssign then
@@ -476,7 +499,13 @@ begin
     end
   else
   if Smt is TPasImplRaise then
-    Write(G, Indent, 'throw ', WriteExpr(TPasImplRaise(Smt).ExceptObject))
+  begin
+    ExceptObj := TPasImplRaise(Smt).ExceptObject;
+    if ExceptObj = nil then
+      Writeln(G, Indent, 'rethrow;')
+    else
+      Writeln(G, Indent, 'throw ', WriteExpr(ExceptObj), ';')
+  end
   else
     WriteBlock(Smt, Indent + TAB);
 end;
@@ -531,20 +560,23 @@ begin
     with TPasImplTry(Comando) do
     begin
       Write(G, Indent, 'try');
-      WriteBlock(TPasImplBlock(Comando), Indent);
+      WriteBlock(TPasImplBlock(Comando), Indent, '', ComChavesSemSalto);
       WriteImplElement(TPasImplElement(FinallyExcept), Indent);
       if Assigned(ElseBranch) then
         WriteImplElement(TPasImplElement(ElseBranch), Indent);
     end
   else
   if Comando is TPasImplTryFinally then
-    WriteCommandBlock(TPasImplBlock(Comando), Indent, 'finally')
+  begin
+    Write(G, ' finally {');
+    WriteCommandBlock(TPasImplBlock(Comando), Indent, LF, '', SoFinal)
+  end
   else
-  if Comando is TPasImplTryExcept then
-    WriteBlock(TPasImplBlock(Comando), Indent, '', SemChaves)
-  else
-  if Comando is TPasImplTryExceptElse then
-    WriteCommandBlock(TPasImplBlock(Comando), Indent, 'catch (e)')
+  if (Comando is TPasImplTryExcept) or (Comando is TPasImplTryExceptElse) then
+  begin
+    Write(G, ' catch (e) {');
+    WriteCommandBlock(TPasImplBlock(Comando), Indent, LF, '', SoFinal)
+  end
   else
   if Comando is TPasImplLabelMark then
     Write(G, Indent, TPasImplLabelMark(Comando).LabelId, ':')
@@ -650,7 +682,7 @@ begin
             Write(G, ConvertMember(Name), ' = ', WriteExpr(Expr));
           end
           else
-            Write(G, 'var ', ConvertMember(Name), ' = ', GetArrayTypePos(TPasArrayType(VarType)));
+            Write(G, 'var ', ConvertMember(Name), ' = ', GetArrayTypePos(TPasArrayType(VarType)), '()');
           Write(G, ';');
           Exit;
         end
@@ -757,10 +789,7 @@ var
   Optional: Boolean = false;
 begin
   if not IsClosure then
-  begin
     Write(G, '(');
-    LastParams := '';
-  end;
   if Assigned(Args) then
     for I := 0 to Args.Count - 1 do
       with TPasArgument(Args[I]) do
@@ -777,8 +806,6 @@ begin
         Write(G, ConvertMember(Name));
         Write(G, IfThen(Value <> '', ' = ' + Value));
         Write(G, IfThen(I < (Args.Count - 1), ', '));
-        if not IsClosure then
-          LastParams := ConvertMember(Name) + IfThen(I < (Args.Count - 1), ', ');
       end;
   Write(G, IfThen(Optional, ']'), IfThen(IsClosure, ' =>', ')'));
 end;
@@ -819,7 +846,7 @@ begin
     WriteBlock(TPasImplBlock(Proc.Body.Body), Indent, Returns, SoFinal);
   end
   else
-    Write(G, ';');
+    Writeln(G, ';');
 
 end;
 
@@ -843,7 +870,7 @@ begin
   InFunction := False;
 end;
 
-function WriteProcedure(Proc: TPasProcedure; Indent: String): Boolean;
+function WriteProcedure(Proc: TPasProcedure; Indent: String; Visibility: String = ''): Boolean;
 var
   FuncType: String;
 begin
@@ -860,33 +887,13 @@ begin
     else
       FuncType := 'void';
     Write(G, IfThen((Proc is TPasConstructor) or (TPasElement(Proc) is TPasConstructorImpl), ConvertClassName(Proc.Parent.Name),
-      IfThen(ByRefArgs.Count > 0, '', FuncType + ' ') + ConvertMember(Proc.Name)));
+      IfThen(ByRefArgs.Count > 0, '', FuncType + ' ') + Visibility + ConvertMember(Proc.Name)));
     WriteProcParams(Proc.ProcType.Args);
     WriteProcBody(Proc, Indent, FuncType, False);
   end
   else
     Result := false;
   InFunction := False;
-end;
-
-procedure RemoveReadPrivates(ClassType: TPasClassType);
-var
-  I: Integer;
-  Member: TPasElement;
-begin
-  with ClassType do
-    for I := 0 to Members.Count - 1 do
-    begin
-      Member := TPasElement(Members[I]);
-      if Member is TPasProperty then
-        with TPasProperty(Member) do
-          if ReadAccessorName <> '' then
-          begin
-            Member := FindMember(TPasVariable, ReadAccessorName);
-            if Member <> nil then
-              Member.Name := '';
-          end;
-    end;
 end;
 
 procedure GetFuncsWithoutParams(Members: TFPList);
@@ -946,7 +953,6 @@ begin
       end;
     end;
     Writeln(G, ' {');
-    // RemoveReadPrivates(Class_);
     GetFuncsWithoutParams(Members);
     for I := 0 to Members.Count - 1 do
     begin
@@ -957,10 +963,7 @@ begin
       Write(G, Elemento.DocComment);
       Prefix := Indent + TAB;
       if Elemento is TPasProcedure then
-      begin
-        Elemento.Name := GetVisibility[Elemento.Visibility] + Elemento.Name;
-        WriteProcedure(TPasProcedure(Elemento), Indent + TAB)
-      end
+        WriteProcedure(TPasProcedure(Elemento), Indent + TAB, GetVisibility[Elemento.Visibility])
       else
       begin
         Elemento.Name := ConvertMember(Elemento.Name);
